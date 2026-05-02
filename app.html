@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<title>Inventory Control System</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+body { font-family:Segoe UI,Arial; background:#f4f6f9; margin:0 }
+header { background:#0d6efd; color:#fff; padding:18px; font-size:22px }
+.container { max-width:1000px; margin:auto; padding:24px }
+.card { background:#fff; border-radius:14px; padding:24px; box-shadow:0 8px 24px rgba(0,0,0,.08) }
+.hidden { display:none !important }
+label { font-weight:600; display:block; margin-top:12px }
+input, select { width:100%; padding:12px; border-radius:8px; border:1px solid #ccc }
+button { margin-top:16px; padding:12px 18px; border:none; border-radius:10px; cursor:pointer }
+.primary { background:#0d6efd; color:#fff }
+.danger { background:#dc3545; color:#fff }
+table { width:100%; margin-top:16px; border-collapse:collapse }
+th,td { padding:12px; border-bottom:1px solid #ddd }
+
+.loading {
+  position:fixed; inset:0;
+  background:rgba(255,255,255,.85);
+  display:flex; align-items:center; justify-content:center;
+  font-size:18px; z-index:9999
+}
+.spinner {
+  width:42px;height:42px;border:5px solid #ddd;
+  border-top:5px solid #0d6efd;border-radius:50%;
+  animation:spin 1s linear infinite;margin-right:12px
+}
+@keyframes spin { to { transform:rotate(360deg) } }
+</style>
+</head>
+
+<body>
+<header>Inventory Control System</header>
+
+<div class="container">
+
+<!-- Halaman Input -->
+<div class="card" id="inputPage">
+<h2>Input Order</h2>
+
+<label>Nama Pegawai</label>
+<input id="pegawai">
+
+<label>Jenis Transaksi</label>
+<select id="jenis">
+  <option value="Keluar">Barang Keluar</option>
+  <option value="Masuk">Barang Masuk</option>
+</select>
+
+<label>Pilih Barang</label>
+<select id="barang"></select>
+
+<label>Jumlah</label>
+<input type="number" id="jumlah" min="1">
+
+<button onclick="tambahBarang()">Tambah Barang</button>
+
+<table>
+<thead><tr><th>Barang</th><th>Jumlah</th><th>Aksi</th></tr></thead>
+<tbody id="list"></tbody>
+</table>
+
+<button class="primary" onclick="lanjutkan()">Lanjutkan</button>
+</div>
+
+<!-- Halaman Konfirmasi -->
+<div class="card hidden" id="confirmPage">
+<h2>Konfirmasi</h2>
+<table>
+<thead><tr><th>Pegawai</th><th>Barang</th><th>Jumlah</th></tr></thead>
+<tbody id="confirm"></tbody>
+</table>
+
+<button onclick="kembali()">Kembali</button>
+<button class="primary" onclick="konfirmasi()">Konfirmasi</button>
+</div>
+
+</div>
+
+<!-- Loading -->
+<div class="loading hidden" id="loading">
+  <div class="spinner"></div> Mengirim data...
+</div>
+
+<script>
+let daftarBarang = [];
+let items = [];
+let isSubmitting = false;
+
+const inputPage = document.getElementById('inputPage');
+const confirmPage = document.getElementById('confirmPage');
+const listEl = document.getElementById('list');
+const confirmEl = document.getElementById('confirm');
+const loading = document.getElementById('loading');
+const pegawai = document.getElementById('pegawai');
+const jenis = document.getElementById('jenis');
+const barang = document.getElementById('barang');
+const jumlah = document.getElementById('jumlah');
+
+// ===== Load Daftar Barang =====
+window.addEventListener('DOMContentLoaded', () => {
+  loading.classList.add('hidden');
+  google.script.run.withSuccessHandler(data => {
+    daftarBarang = data || [];
+    barang.innerHTML = '';
+    daftarBarang.forEach(b => {
+      const o = document.createElement('option');
+      o.value = b.kodeBarang;
+      o.textContent = b.namaBarang + ` (Stok: ${b.sisaSaldo})`;
+      barang.appendChild(o);
+    });
+  }).getDaftarBarang();
+});
+
+// ===== Tambah Barang =====
+function tambahBarang() {
+  const qty = Number(jumlah.value);
+  if (!qty) return alert('Jumlah salah');
+
+  const b = daftarBarang.find(x => x.kodeBarang === barang.value);
+  if (!b) return;
+
+  items.push({ kodeBarang: b.kodeBarang, namaBarang: b.namaBarang, jumlah: qty });
+  jumlah.value = '';
+  renderList();
+}
+
+function renderList() {
+  listEl.innerHTML = '';
+  items.forEach((i, idx) => {
+    listEl.innerHTML += `
+      <tr>
+        <td>${i.namaBarang}</td>
+        <td>${i.jumlah}</td>
+        <td><button class="danger" onclick="hapus(${idx})">Hapus</button></td>
+      </tr>`;
+  });
+}
+
+function hapus(idx) {
+  items.splice(idx, 1);
+  renderList();
+}
+
+// ===== Lanjut ke Konfirmasi =====
+function lanjutkan() {
+  if (!items.length) return alert('Belum ada barang');
+  confirmEl.innerHTML = '';
+  items.forEach(i => {
+    confirmEl.innerHTML += `
+      <tr>
+        <td>${pegawai.value}</td>
+        <td>${i.namaBarang}</td>
+        <td>${i.jumlah}</td>
+      </tr>`;
+  });
+  inputPage.classList.add('hidden');
+  confirmPage.classList.remove('hidden');
+}
+
+function kembali() {
+  confirmPage.classList.add('hidden');
+  inputPage.classList.remove('hidden');
+}
+
+// ===== Konfirmasi & Kirim =====
+function konfirmasi() {
+  if (isSubmitting) return;
+  isSubmitting = true;
+  loading.classList.remove('hidden');
+
+  google.script.run
+    .withSuccessHandler(() => {
+      // Reset UI
+      items = [];
+      pegawai.value = '';
+      jumlah.value = '';
+      listEl.innerHTML = '';
+      inputPage.classList.remove('hidden');
+      confirmPage.classList.add('hidden');
+      loading.classList.add('hidden');
+      isSubmitting = false;
+      alert('Transaksi berhasil dikirim!');
+      // Reload daftar barang terbaru
+      google.script.run.withSuccessHandler(data => {
+        daftarBarang = data || [];
+        barang.innerHTML = '';
+        daftarBarang.forEach(b => {
+          const o = document.createElement('option');
+          o.value = b.kodeBarang;
+          o.textContent = b.namaBarang + ` (Stok: ${b.sisaSaldo})`;
+          barang.appendChild(o);
+        });
+      }).getDaftarBarang();
+    })
+    .withFailureHandler(err => {
+      alert(err.message);
+      loading.classList.add('hidden');
+      isSubmitting = false;
+    })
+    .simpanTransaksi({
+      namaPegawai: pegawai.value,
+      jenisTransaksi: jenis.value,
+      items: items
+    });
+}
+</script>
+
+</body>
+</html>
